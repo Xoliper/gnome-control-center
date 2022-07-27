@@ -22,6 +22,7 @@
  */
 
 #include <glib/gi18n.h>
+#include <gudev/gudev.h>
 
 #include "cc-battery-row.h"
 
@@ -100,6 +101,36 @@ get_timestring (guint64 time_secs)
                                        minutes, ngettext ("minute", "minutes", minutes));
 }
 
+static int
+get_charge_threshold_setting()
+{
+
+    int ret = -1;
+    GList *l = NULL;
+    const gchar *subsystems[] = {"power_supply", NULL};
+    GUdevClient *gudev_client = g_udev_client_new (subsystems);
+
+    for (int i=0; subsystems[i] != NULL; i++) {
+        GList *devices = g_udev_client_query_by_subsystem (gudev_client, subsystems[i]);
+
+        for (l = devices; l != NULL; l = l->next) {
+            GUdevDevice *native = l->data;
+            if(g_udev_device_has_sysfs_attr(native, "charge_control_end_threshold")){
+              ret = g_udev_device_get_sysfs_attr_as_int(native, "charge_control_end_threshold");
+              break;
+            }
+        }
+        if(ret != -1) break;
+
+        g_list_foreach (devices, (GFunc) g_object_unref, NULL);
+        g_list_free (devices);
+    }
+
+    g_object_unref (gudev_client);
+
+  return ret;
+}
+
 static gchar *
 get_details_string (gdouble percentage, UpDeviceState state, guint64 time)
 {
@@ -141,9 +172,13 @@ get_details_string (gdouble percentage, UpDeviceState state, guint64 time)
             /* TRANSLATORS: primary battery */
             details = g_strdup (_("Empty"));
             break;
-          default:
-            details = g_strdup_printf ("error: %s", up_device_state_to_string (state));
-            break;
+          default: {
+            if(get_charge_threshold_setting() >= percentage){
+              details = g_strdup_printf("Fully charged (threshold)");
+            } else {
+              details = g_strdup_printf ("error: %s", up_device_state_to_string (state));
+            }
+          } break;
         }
     }
   else
@@ -171,10 +206,13 @@ get_details_string (gdouble percentage, UpDeviceState state, guint64 time)
             /* TRANSLATORS: primary battery */
             details = g_strdup (_("Empty"));
             break;
-          default:
-            details = g_strdup_printf ("error: %s",
-                                       up_device_state_to_string (state));
-            break;
+          default: {
+            if(get_charge_threshold_setting() >= percentage){
+              details = g_strdup_printf("Fully charged (threshold)");
+            } else {
+              details = g_strdup_printf ("error: %s", up_device_state_to_string (state));
+            }
+          } break;
         }
     }
 

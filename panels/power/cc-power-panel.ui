@@ -146,6 +146,18 @@
               </object>
             </child>
             <child>
+              <object class="AdwActionRow" id="battery_threshold_row">
+                <property name="title" translatable="yes">Enable charge threshold</property>
+                <property name="subtitle" translatable="yes">Sets the battery maximum charge capacity to 80%, which may extend their life.</property>
+                <property name="activatable_widget">battery_threshold_switch</property>
+                <child>
+                  <object class="GtkSwitch" id="battery_threshold_switch">
+                    <property name="valign">center</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
               <object class="AdwComboRow" id="blank_screen_row">
                 <property name="title" translatable="yes">Screen _Blank</property>
                 <property name="subtitle" translatable="yes">Turns the screen off after a period of inactivity.</property>

@@ -25,6 +25,7 @@
 #include <glib/gi18n.h>
 #include <gnome-settings-daemon/gsd-enums.h>
 #include <gio/gdesktopappinfo.h>
+#include <gudev/gudev.h>
 
 #include "shell/cc-object-storage.h"
 #include "cc-battery-row.h"
@@ -53,6 +54,8 @@ struct _CcPowerPanel
   AdwPreferencesGroup *device_section;
   GtkListBoxRow     *dim_screen_row;
   GtkSwitch         *dim_screen_switch;
+  AdwActionRow      *battery_threshold_row;
+  GtkSwitch         *battery_threshold_switch;
   AdwPreferencesGroup *general_section;
   GtkSizeGroup      *level_sizegroup;
   AdwComboRow       *power_button_row;
@@ -73,6 +76,7 @@ struct _CcPowerPanel
   GSettings     *gsd_settings;
   GSettings     *session_settings;
   GSettings     *interface_settings;
+  GSettings     *battery_threshold_settings;
   UpClient      *up_client;
   GPtrArray     *devices;
   gboolean       has_batteries;
@@ -857,6 +861,32 @@ populate_blank_screen_row (AdwComboRow *combo_row)
   adw_combo_row_set_model (combo_row, G_LIST_MODEL (string_list));
 }
 
+static bool
+is_charge_threshold_supported()
+{
+
+    bool ret = false;
+    GList *l = NULL;
+    const gchar *subsystems[] = {"power_supply", NULL};
+    GUdevClient *gudev_client = g_udev_client_new (subsystems);
+
+    for (int i=0; subsystems[i] != NULL; i++) {
+        GList *devices = g_udev_client_query_by_subsystem (gudev_client, subsystems[i]);
+
+        for (l = devices; l != NULL; l = l->next) {
+            GUdevDevice *native = l->data;
+            ret = g_udev_device_has_sysfs_attr(native, "charge_control_end_threshold");
+        }
+
+        g_list_foreach (devices, (GFunc) g_object_unref, NULL);
+        g_list_free (devices);
+    }
+
+    g_object_unref (gudev_client);
+
+  return ret;
+}
+
 static void
 setup_power_saving (CcPowerPanel *self)
 {
@@ -967,6 +997,16 @@ setup_power_saving (CcPowerPanel *self)
 
       set_ac_battery_ui_mode (self);
       update_automatic_suspend_label (self);
+
+      bool show_battery_charge_threshold_row = is_charge_threshold_supported();
+      if(self->battery_threshold_settings != NULL && show_battery_charge_threshold_row){
+        g_settings_bind (self->battery_threshold_settings, "battery-charge-threshold-enabled",
+                         self->battery_threshold_switch, "active",
+                         G_SETTINGS_BIND_DEFAULT);
+      } else {
+        gtk_widget_hide(GTK_WIDGET (self->battery_threshold_row));
+      }
+
     }
 }
 
@@ -1416,6 +1456,7 @@ cc_power_panel_dispose (GObject *object)
   g_clear_object (&self->gsd_settings);
   g_clear_object (&self->session_settings);
   g_clear_object (&self->interface_settings);
+  g_clear_object (&self->battery_threshold_settings);
   g_clear_pointer ((GtkWindow **) &self->automatic_suspend_dialog, gtk_window_destroy);
   g_clear_pointer (&self->devices, g_ptr_array_unref);
   g_clear_object (&self->up_client);
@@ -1456,6 +1497,8 @@ cc_power_panel_class_init (CcPowerPanelClass *klass)
   gtk_widget_class_bind_template_child (widget_class, CcPowerPanel, device_section);
   gtk_widget_class_bind_template_child (widget_class, CcPowerPanel, dim_screen_row);
   gtk_widget_class_bind_template_child (widget_class, CcPowerPanel, dim_screen_switch);
+  gtk_widget_class_bind_template_child (widget_class, CcPowerPanel, battery_threshold_row);
+  gtk_widget_class_bind_template_child (widget_class, CcPowerPanel, battery_threshold_switch);
   gtk_widget_class_bind_template_child (widget_class, CcPowerPanel, general_section);
   gtk_widget_class_bind_template_child (widget_class, CcPowerPanel, level_sizegroup);
   gtk_widget_class_bind_template_child (widget_class, CcPowerPanel, power_button_row);
@@ -1500,6 +1543,7 @@ cc_power_panel_init (CcPowerPanel *self)
   self->gsd_settings = g_settings_new ("org.gnome.settings-daemon.plugins.power");
   self->session_settings = g_settings_new ("org.gnome.desktop.session");
   self->interface_settings = g_settings_new ("org.gnome.desktop.interface");
+  self->battery_threshold_settings = g_settings_new ("org.gnome.BatteryChargeManager");
 
   gtk_list_box_set_sort_func (self->battery_listbox,
                               (GtkListBoxSortFunc)battery_sort_func, NULL, NULL);
